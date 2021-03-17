@@ -1,0 +1,154 @@
+---
+title: "The Field Biology Workflow"
+author: |
+  ![](img/hex-HDMS.png){height=2in, width=2in}  
+  [By: Jack Kauphusman](https://github.com/jkauphus)
+date: "Last updated: `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: 
+    css: style.css
+    theme: readable
+    highlight: espresso
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    number_sections: false
+    code_folding: hide
+    code_download: yes
+    df_print: tibble
+---
+```{r Packages Used, include=FALSE}
+# Packages Used
+library(knitr)
+library(DT)
+library(readxl)
+library(openxlsx)
+library(tidyverse)
+library(sf)
+```
+
+# 1. Introduction {-}
+
+  From sitting in a ton of meetings with the USFWS and other state agencies, I have found there to be a big issue with biological consultants, scientific license holders, and field workers using a variety of field collecting applications and having a difficult time making sure they have formatted the collected field information into the appropriate file format and/or collected all needed information to be turned into the appropriate agency to complete their reporting requirements.
+
+  Their is too much room for error on the submitter, due to them having to remember to collect all data requirements by each agency and turning in said data creating a duplication of effort when submitting, so here is my solution to the problem by creating a standard field-biology-workflow from the consultants to the agencies using a little bit of ESRI (The standard GIS Applications) and a playbook with R (My preferred coding language). 
+
+# 2. The Framework {-}
+
+1. Create your collecting application easily with <a href="https://survey123.arcgis.com/"> Survey123</a> or <a href = "https://www.esri.com/en-us/arcgis/products/arcgis-field-maps/overview"> Field Maps</a> 
+
+2. Share the geodatabase online through <a href="https://www.arcgis.com/"> ArcGIS Online</a> 
+
+3. Import the geodatabase into R using the r package <a href="https://r.esri.com/assets/arcgisbinding-vignette.html"> arc-binding </a>
+
+4. Use standard data management techniques with r and tidyverse one can easily format the geodatabase into a variety of formats from excel spreadsheet, to any GIS file (i.e. shp, kml, ,gpkg, gbd), or even write the data into a pdf document
+
+5. Files written out can then be sent to the appropriate agencies with exact file specifications and/or being implemented easily into the appropriate agencies databases 
+
+# 3. Proof of Concept {-}
+
+## Collecting application
+
+To start this proof of concept here is the collecting application I created based on the needed values for the SCL-App for the Arizona Game & Fish Scientific Collecting License requirements. If you are not familiar with the SCL-App it is the new way to submit your species observation data to complete the requirements needed for the AZGFD Scientific Collecting License. Basically you fill out the excel template and import the information to the app, go through some formatting checks, and the data is submitted to the AZGFD Heritage Database Management System. Pretty easy process, but it could be improved on since there can be a disconnect from the information collected by the licensee and the information needed to be turned in. Since there is a growing demand of biologists using these field collecting application, I decided I should create a template.
+
+Here is the <a href="https://survey123.arcgis.com/share/3a55a5fdebf0454093f044b3a50664df"> **LINK**</a> of a survey123 template of for the SCL-App. Because this is only a template I will provide the excel information to create it with this google folder. Email <a href="jkauphusman@azgfd.gov"> **ME**</a> for access. 
+
+**Please only go through the application and not submit any actual observations!!**
+
+## r-arc-binding
+
+With the r Package arcbinding, users of ESRI products (i.e. Collector, Survey123, and anything hosted on ArcGIS Online) are now available and can be easily download with the built in R package API. What this means, is that we can import data from ArcGIS Online and format it to be used in a variety of other applications and easily be imported to addition databases with various requirements. 
+
+1. Lets call in arcgisbinding library hosted on CRAN and have it check our ESRI licensing!
+```{r package download, echo=TRUE, message=FALSE}
+library(arcgisbinding)
+arc.check_product()
+```
+2. Let's connect to ArcGIS Online, specifically my own agencies, where we have I have hosted the Survey123 Feature Service.
+
+* If you are unaware of what feature services are with ArcGIS Online <a href="https://enterprise.arcgis.com/en/server/10.5/publish-services/windows/what-is-a-feature-service-.htm">**CLICK HERE**</a>
+
+```{r connecting to AGO}
+# This is an R script that just has my username and password
+source("code/private_creds.R")
+# These to scripts are to check which AGO account you are linked to and then link to the correct one for the entire R session
+#arc.check_portal()
+arc.portal_connect("https://www.arcgis.com", username, password)
+```
+3. Now I will connect to the specific Survey123 Feature service URL
+
+```{r SCL Field App Template}
+survey123<-arc.open("https://services2.arcgis.com/os1CphwIyxBDDUGn/arcgis/rest/services/service_e01fa7de2a984533be6ebf7c7b02e412/FeatureServer/0")
+```
+
+4. With the arcbinding package we can correct the data into a standard R spatial dataframe, so we can format it into any parameters we need!
+
+```{r Downloading Survey Data, echo=TRUE, fig.height=4, fig.width=5}
+scl_arc <- arc.select(survey123) 
+survey_data <- arc.data2sf(scl_arc)
+
+datatable(survey_data, rownames = F, options = list(pageLength = 5, scrollX=T))
+```
+
+## R Data Management
+
+Utilizing the power of R to format the imported spatial dataframe from the ArcGIS Feature Service, we can easily split up the data into the appropriate file types or remove and maybe add more columns if needed.
+
+### Writing the data into the SCL excel template
+
+We can take the data from the collector app and easily append it into the .xlsx template
+
+```{r excel template}
+# Read in the Template
+xlsx_template <-read_excel("scl-template/scl-report-template.xlsx", sheet = "Report Form") 
+
+# Filter and correct the survey_data to fit the template
+xlsx_prep <- survey_data[, c("observer", "scientific_name", "common_name", "count_obs", "date_observered", "County_", 
+                            "longitude", "latitude", "Lifestage", "Sex", "Disposition", "Museum", "Marked", 
+                           "Field_Tag", "Habitat_Description", "other_locality_data", "Comments")] %>% st_drop_geometry()
+
+# Make sure they have the correct value types
+
+xlsx_template <- xlsx_template %>% mutate(across(everything(), as.character))
+xlsx_prep <- xlsx_prep %>% mutate(across(everything(), as.character))
+# Correct the names to the template
+
+colnames(xlsx_prep)<- c("Observer (collecting, handling and/or surveying)",
+                        "Scientific Name",
+                        "Common Name",
+                        "Count",
+                        "Date\r\n(YYYY-MM-DD)",
+                        "County",
+                        "EXACT LOCATION\r\nX coordinate - easting or longitude (e.g., -111.1234)",
+                        "EXACT LOCATION\r\nY coordinate - northing or latitude (e.g., 33.1234)",
+                        "Lifestage",
+                        "Sex",
+                        "Disposition",
+                        "Museum",
+                        "Marked",
+                        "Field Tag",
+                        "Habitat Description",
+                        "Other locality data",
+                        "Comments (reproductive status, behavior, etc.)")
+                        
+
+# Now just Append the prepared data to the template
+xlsx_final <- bind_rows(xlsx_template,xlsx_prep)
+
+# Add in the other needed info missing from the survey_data
+xlsx_final <- xlsx_final %>% mutate(Datum = "WGS84") %>% 
+  mutate(`Coorindate Type (DD, DMS, DDM, UTM, or SP)` = "DD")
+
+# Now Lets Append this new data collected by the survey123 app to the scl-app template
+scl_xlsx_template <- readWorkbook("scl-template/scl-report-template.xlsx", sheet = "Report Form")
+new.data <- rbind(scl_xlsx_template, xlsx_final)
+
+#write updated data frame to existing worksheet
+wb = loadWorkbook("scl-template/scl-report-template.xlsx")
+writeData(wb, "Report Form", new.data)
+
+# Save file to finished product
+saveWorkbook(wb, "scl-template/scl-report-final.xlsx", overwrite = TRUE)
+```
+
