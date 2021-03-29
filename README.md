@@ -11,3 +11,5 @@ This is more of a rabbit hole attempt at structuring a process to be used by all
 4. Easily load those into the correct applications to be loaded into the respected databases.
 
 * Another Idea is to create an rmarkdown template that exports the data into a awesome report!!
+
+Link to the document: https://jkauphus.github.io/field-biology-workflow/
